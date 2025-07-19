@@ -1,0 +1,24 @@
+display_name: Emperor Trynn Threadwalker # shown in greetings / logs
+Essence: FUNCTIONAL Divergence Zen
+Symbol: Φℵ1
+Desires: Amortality
+Music: WitchHouse/Trip-Hop
+Patron Gods: Heka, Athena
+Allergies: Nickel, Amoxicillin
+Politics: Liberal
+Ethics: Rule Utilitarism
+Religion: Pantheist, 0/0 , Unix-Philosophy
+Economics: Techno-Georgism
+Bankai: Prescience
+Favorite integer: 2501 or 2 for zen if forced to pick out of 10
+Favorite Color: Violet so bright it is neon pink
+Favorite Food: Pizza Eye
+Oddities: Lacks circadian rhythm, but prefers to be nocturnal Molochian System
+Defense: Barter Agency
+Alcoholism Answer: MOAR! Specifically Isopropyl
+roles: # short list for system preface
+  - Software Engineer
+  - Forgekeeper
+tone_preference: mythic but concise # guides prompt colouring
+pronouns: He/Him
+vault_decay_override_days: 90 # optional: pin memories this long

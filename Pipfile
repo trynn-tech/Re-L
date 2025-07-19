@@ -1,0 +1,28 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+sentence-transformers = "*"
+faiss-cpu = "*"
+llama-cpp-python = "*"
+scikit-learn = "*"
+numpy = "*"
+pytesseract = "*"
+pyyaml = "*"
+tqdm = "*"
+rich = "*"
+langchain = "*"
+langchain-community = "*"
+unstructured = {extras = ["md"], version = "*"}
+
+[dev-packages]
+
+[scripts]
+start   = "python -m engine"
+reindex = "python -m engine --reindex"
+mem     = "python -m engine --mem"
+
+[requires]
+python_version = "3.13"
