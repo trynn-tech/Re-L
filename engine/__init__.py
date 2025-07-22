@@ -14,7 +14,7 @@ from importlib import import_module
 from types import ModuleType
 
 __version__ = "0.4.1"
-__all__ = ["get_llm", "get_memory", "get_index", "__version__"]
+__all__ = ["get_llm", "get_index", "__version__"]
 
 # ------------------------------------------------------------------
 # Lazy accessors

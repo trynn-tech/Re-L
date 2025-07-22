@@ -16,6 +16,8 @@ rich = "*"
 langchain = "*"
 langchain-community = "*"
 unstructured = {extras = ["md"], version = "*"}
+redis = "*"
+python-dotenv = "*"
 
 [dev-packages]
 

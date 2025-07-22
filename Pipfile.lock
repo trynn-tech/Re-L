@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "7b9ef2e4bea1ff0b8776c7b89dfd9c50ddc03ab78587c3c600c5ff4af56a81ff"
+            "sha256": "3d0fd55b7cc576c98b916e171b240a085956719501fa636ef667f4392ea75421"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -795,11 +795,11 @@
         },
         "langchain-core": {
             "hashes": [
-                "sha256:383e9cb4919f7ef4b24bf8552ef42e4323c064924fea88b28dd5d7ddb740d3b8",
-                "sha256:c132961117cc7f0227a4c58dd3e209674a6dd5b7e74abc61a0df93b0d736e283"
+                "sha256:56f1ce0ab410508e25b3b4b3b87a8ffae38bf16294e5f605ac63a8aff5bc13a4",
+                "sha256:58551e5411ff9f92c7c8f4379e07e762ca66800e821cd904e19881fe41f691ee"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.3.69"
+            "version": "==0.3.70"
         },
         "langchain-text-splitters": {
             "hashes": [
@@ -818,11 +818,11 @@
         },
         "langsmith": {
             "hashes": [
-                "sha256:3864cf29295c2565c578e93d1533f5b39e2b4af616545ace30f069635a319890",
-                "sha256:de91f1abdd65da369996f8eedb5201f442110c9c3bde5babc6f5300f07da65df"
+                "sha256:50eccb744473dd6bd3e0fe024786e2196b1f8598f8defffce7ac31113d6c140f",
+                "sha256:ca2f6024ab9d2cd4d091b2e5b58a5d2cb0c354a0c84fe214145a89ad450abae0"
             ],
             "markers": "python_version >= '3.9'",
-            "version": "==0.4.7"
+            "version": "==0.4.8"
         },
         "llama-cpp-python": {
             "hashes": [
@@ -1867,6 +1867,7 @@
                 "sha256:31f23644fe2602f88ff55e1f5c79ba497e01224ee7737937930c448e4d0e24dc",
                 "sha256:a8a6399716257f45be6a007360200409fce5cda2661e3dec71d23dc15f6189ab"
             ],
+            "index": "pypi",
             "markers": "python_version >= '3.9'",
             "version": "==1.1.1"
         },
@@ -2053,6 +2054,15 @@
             ],
             "markers": "python_version >= '3.9'",
             "version": "==3.13.0"
+        },
+        "redis": {
+            "hashes": [
+                "sha256:c8ddf316ee0aab65f04a11229e94a64b2618451dab7a67cb2f77eb799d872d5e",
+                "sha256:e821f129b75dde6cb99dd35e5c76e8c49512a5a0d8dfdc560b2fbd44b85ca977"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.9'",
+            "version": "==6.2.0"
         },
         "regex": {
             "hashes": [

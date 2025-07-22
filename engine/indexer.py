@@ -15,7 +15,8 @@ def get_embedding():
 
 
 class VectorIndexManager:
-    def __init__(self, path="faiss_index.pkl", model="all-MiniLM-L6-v2"):
+
+    def __init__(self, path=INDEX_PATH, model="all-MiniLM-L6-v2"):
         self.path = pathlib.Path(path)
         self.emb = SentenceTransformerEmbeddings(model_name=model)
         self.vect = None

@@ -1,46 +1,85 @@
 import numpy as np, hashlib, sys, logging, time
+import requests, html
 from langchain.schema import Document
-from engine import get_index
 from engine.indexer import get_embedding
 from engine.llm_client import invoke, stream, llm
-from engine.memory import mem
-from engine.identity import get as id_get
+from engine.memory import recall, store, reinforce  # re‑exported in memory/__init__
+from engine.fabricator import index as get_index  # FAISS singleton
 from engine.config import SIM_HIGH, SIM_LOW
+
+# TODO
+from engine.identity import get as id_get
+
 
 logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 dbg = logging.debug
 
 
-def decay():  # thin wrappers to keep old calls working
-    mem.decay()
-
-
-def remember(k, v):
-    mem.remember(k, v)
-
-
-def tiered_retrieve(*args, **kw):  # still a stub
-    return [], "novel", None
-
-
 EMB = get_embedding()
-index = None  # will be lazily set via get_index() later                         # module‑level
+index = None  # cached FAISS fallback
 
 
-def faiss_guarded_retrieve(query, k=4, high=0.85, low=0.10):
+def wiki_snippet(q):
+    params = {"action": "opensearch", "search": q, "limit": 1, "format": "json"}
+    data = requests.get(
+        "https://en.wikipedia.org/w/api.php", params=params, timeout=5
+    ).json()
+    return html.unescape(data[2][0]) if data and data[2] else ""
+
+
+def guarded_retrieve(
+    query: str, k: int = 4, high: float = SIM_HIGH, low: float = SIM_LOW
+):
+    """
+    Wrapper that first calls api.recall() (STM → Heur → LTM).
+    Falls back to local FAISS only when recall() returns nothing
+    so your existing vector index is still used as a safety‑net.
+    """
+    # ── Tiered memory first ───────────────────────────────
+    hits = recall(query, k=k)  # list[str] (may be empty)
+    if hits:
+        docs = [Document(page_content=t) for t in hits]
+        mode = "reuse" if len(docs) == 1 else "dialectic"
+        return docs, mode  # compatible with old code
+
+    # ── Old FAISS logic (unchanged) ───────────────────────
     global index
     if index is None:
-        index = get_index()  # FAISS object
-    vec = EMB.embed_query(query)
-    sims, docs = index.similarity_search_with_score(vec, k=k)
+        index = get_index()
+
+    pairs = index.similarity_search_with_score(query, k=k)
+    pairs = [
+        (d, s)
+        for d, s in pairs
+        if not d.page_content.startswith(
+            "The thesis and antithesis both"
+        )  # crude filter
+    ]
+    if not pairs:
+        return [], "novel"
+
+    # sort is already highest‑first in LC >=0.2, but do it explicitly
+    pairs.sort(key=lambda x: x[1], reverse=True)
+
+    docs = [d for d, _ in pairs]
+    sims = [s for _, s in pairs]
     best_sim = sims[0]
 
-    if best_sim >= high:
-        return docs[:1], "reuse"
-    elif best_sim >= low:
-        return docs[:k], "dialectic"
-    else:
-        return [], "novel"
+    # OPTIONAL dynamic_k
+    if dynamic := True:
+        threshold = 0.9 * best_sim
+        docs = [d for d, s in pairs if s >= threshold]
+        sims = [s for s in sims if s >= threshold]
+
+    mode = "reuse" if best_sim >= high else "dialectic" if best_sim >= low else "novel"
+
+    docs = [
+        d
+        for d in docs
+        if not d.page_content.startswith("The thesis and antithesis both")
+    ]
+
+    return docs, mode
 
 
 # ---------------- lint / proof stubs -----------------
@@ -60,7 +99,7 @@ def prove_invariant(code: str, spec: str) -> bool:
 
 def code_proof_cycle(spec: str) -> str:
     # 1. Retrieval
-    docs, mode, src = tiered_retrieve(spec, k=2, high=0.90, low=0.40)
+    docs, mode = guarded_retrieve(spec, k=2, high=0.90, low=0.40)
     if mode.startswith("reuse"):
         return docs[0].page_content
 
@@ -146,41 +185,43 @@ def _split_thesis_antithesis(docs: list[Document]) -> tuple[str, str]:
 # ─────────────────── Hegelian QA (refactored) ────────────────────
 def hegelian_qa(query: str, k: int = 4) -> str:
 
-    global index
-    if index is None:
-        index = get_index()  # FAISS object
+    # TODO: turn this into a proper router rather than hijacking this function
+    # --- 0. Special command:  /code <spec> ------------------------------
+    if query.startswith("/code"):
+        spec = query[len("/code") :].strip() or "Write a hello‑world fn."
+        return code_proof_cycle(spec)
 
-    decay()
     dbg(f"query: {query!r}")
-
-    SENTINEL = "<|END|>"
-
-    # ---------------- Sentiment-aware preface ----------------
-    recent = [v["v"] for k, v in mem.items() if k.startswith("user_turn_")][-3:]
-    avg_val = np.mean([r["valence"] for r in recent]) if recent else 0
-    if avg_val < -0.3:
-        tone_preface = (
-            "You sense the user is stressed; respond with extra empathy "
-            "while remaining concise and clear.\n"
-        )
-    elif avg_val > 0.3:
-        tone_preface = "Match the user's upbeat tone while remaining concise.\n"
-    elif (
-        avg_val == 0 and recent
-    ):  # If no strong sentiment, but recent turns exist, try to match neutral
-        tone_preface = "Maintain a neutral, professional, and concise tone.\n"
-    elif not recent:  # No recent turns, default neutral
-        tone_preface = "Maintain a neutral, professional, and concise tone.\n"
-    else:
-        tone_preface = ""
+    tone_preface = "Maintain a neutral, professional, and concise tone.\n"
 
     # ---------------- Retrieve context ----------------
-    docs = index.similarity_search(query, k=k)
+    docs, mode = guarded_retrieve(query, k=k)
+
+    if mode == "novel":
+        snippet = wiki_snippet(query)
+        if snippet:
+            dbg(f"Wiki snippet: {snippet}")
+            docs.append(Document(page_content=snippet))
+
     if not docs:
         return "I have no relevant context for that question."
 
     dbg(f"docs exist")
     thesis, antithesis = _split_thesis_antithesis(docs)
+
+    # If retrieval produced only one fragment, fabricate a counter‑view
+    if antithesis.strip().upper() in {"", "N/A"}:
+        antithesis = invoke(
+            "Write a concise counter‑argument (≤120 words) to:\n"
+            f"```{thesis[:800]}```",
+            temperature=0.7,
+        ).strip()
+
+    used_keys = [
+        d.metadata["id"] for d in docs if hasattr(d, "metadata") and "id" in d.metadata
+    ]
+    for k in used_keys:
+        reinforce(k, delta=0.5)
 
     def _trim(text, max_tokens=200):
         words = text.split()
@@ -191,15 +232,12 @@ def hegelian_qa(query: str, k: int = 4) -> str:
 
     # ---------------- Synthesis instruction (ENHANCED) ----------------
     synthesis_instruction = (
-        "Analyse the thesis and antithesis as follows:\n"
-        "• Summarise each core claim and its key evidence concisely, without repetition.\n"
-        "• Identify and explain any logical gaps within each, or contradictions between them.\n"
-        "• Pinpoint the most significant overlap or conflict that drives the dialectic.\n"
-        "• **Craft a Synthesis that actively reconciles or transcends both positions.** "
-        "   - **Prioritize the most impactful and actionable insights.**\n"
-        "   - **Derive a novel conceptualization that emerges from the tension.**\n"
-        "   - **Avoid merely combining or listing points; aim for a genuine conceptual leap.**\n"
-        "• Finish with a single-sentence takeaway beginning “Therefore …” that encapsulates the new understanding."
+        "You are a code‑side assistant.\n"
+        "• In ≤150 words summarise the thesis.\n"
+        "• In ≤150 words summarise the antithesis.\n"
+        "• Craft a synthesis **focused on ONE concrete step the user can take "
+        "today** (≤120 words).\n"
+        "End with a single‑sentence takeaway beginning “Therefore …”."
     )
 
     # Guiding instruction for Hegel's dialectic nuance
@@ -224,7 +262,7 @@ def hegelian_qa(query: str, k: int = 4) -> str:
     dbg(f"Prompt: {prompt.strip()}")
     dbg(f"Token Input Total: {llm.get_num_tokens(prompt)}")
     answer = _invoke_collect(prompt, temperature=0.45)
-    remember("last_answer", answer)
+    store(answer, valence=+0.1)  # logs the synthesis into STM/LTM path
     return answer
 
 
