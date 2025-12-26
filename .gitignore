@@ -1,2 +1,6 @@
 # Ignore Env files
 .env
+docker-compose.yml
+
+# Ignore caching files
+__pycache__/
