@@ -1,15 +1,14 @@
+# engine/agent.py
+
 import numpy as np, hashlib, sys, logging, time
 import requests, html
-from langchain.schema import Document
+from langchain_core.documents import Document
 from engine.indexer import get_embedding
 from engine.llm_client import invoke, stream, llm
-from engine.memory import recall, store, reinforce  # re‑exported in memory/__init__
 from engine.fabricator import index as get_index  # FAISS singleton
 from engine.config import SIM_HIGH, SIM_LOW
-
-# TODO
-from engine.identity import get as id_get
-
+from engine.memory import recall, store, reinforce, evaluate_and_store, analyse_turn, get_avg_confidence
+from engine.identity import get as id_get, refresh_if_changed
 
 logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 dbg = logging.debug
@@ -17,7 +16,7 @@ dbg = logging.debug
 
 EMB = get_embedding()
 index = None  # cached FAISS fallback
-
+recent_thought_vectors = []
 
 def wiki_snippet(q):
     params = {"action": "opensearch", "search": q, "limit": 1, "format": "json"}
@@ -181,90 +180,133 @@ def _split_thesis_antithesis(docs: list[Document]) -> tuple[str, str]:
     dbg(f"Found most opposed pair with similarity: {worst_sim:.4f}")
     return thesis_doc_content, antithesis_doc_content
 
+def guarded_retrieve_outlier(query: str, k: int = 4):
+    """Retrieves 2x docs and sorts by lowest similarity to find outlier sparks."""
+    global index
+    if index is None: index = get_index()
+    
+    # We pull double the k to ensure we have a 'pool' of distant ideas to pick from
+    pairs = index.similarity_search_with_score(query, k=k*2)
+    if not pairs: return [], "novel"
+    
+    # Sort by score (In FAISS, higher distance = lower similarity)
+    # We want the ones that are 'barely' related to the query
+    pairs.sort(key=lambda x: x[1]) 
+    
+    docs = [p[0] for p in pairs]
+    return docs, "divergent"
 
-# ─────────────────── Hegelian QA (refactored) ────────────────────
+# engine/agent.py
+seen_hashes = set()
+
+def _find_most_opposed(thesis: str, docs: list, penalty_vector=None) -> str:
+    global seen_hashes
+    if not docs: return ""
+    
+    # 1. Filter out already-seen fragments
+    available = []
+    for d in docs:
+        h = hashlib.md5(d.page_content.encode()).hexdigest()
+        if h not in seen_hashes:
+            available.append((d, h))
+            
+    # 2. If we've seen everything, reset the needle
+    if not available:
+        dbg("♻️ Vault Loop Complete. Resetting seen_hashes.")
+        seen_hashes.clear()
+        available = [(d, hashlib.md5(d.page_content.encode()).hexdigest()) for d in docs]
+
+    # 3. Standard opposition logic on the remaining 'unseen' docs
+    scores = []
+    for d, h in available:
+        sim = _semantic_similarity(thesis, d.page_content)
+        scores.append((d.page_content, sim, h))
+    
+    scores.sort(key=lambda x: x[1]) # Lowest similarity first
+    
+    # 4. Mark as seen and return
+    best_content, _, best_hash = scores[0]
+    seen_hashes.add(best_hash)
+    return best_content
+
+# ─────────────────── Hegelian QA  ────────────────────
 def hegelian_qa(query: str, k: int = 4) -> str:
+    global recent_thought_vectors
+    from engine.memory import R  # Ensure Redis access for avg_confidence
 
-    # TODO: turn this into a proper router rather than hijacking this function
-    # --- 0. Special command:  /code <spec> ------------------------------
-    if query.startswith("/code"):
-        spec = query[len("/code") :].strip() or "Write a hello‑world fn."
-        return code_proof_cycle(spec)
+    # --- PHASE 1: Temporal Context & Gravity Check ---
+    raw_avg = R.get("meta:avg_confidence")
+    prev_avg = get_avg_confidence()
+    
+    # Calculate the 'Penalty Vector' from the Temporal Shadow
+    penalty_vec = np.mean(recent_thought_vectors, axis=0) if recent_thought_vectors else None
 
-    dbg(f"query: {query!r}")
-    tone_preface = "Maintain a neutral, professional, and concise tone.\n"
+    # If the system is stalling (high confidence but repeating), force an outlier search
+    if prev_avg > 0.85:
+        dbg("🌌 Gravity High: Engaging Outlier Retrieval to break the loop.")
+        external_docs, _ = guarded_retrieve_outlier(query, k=k)
+        temp = 0.85 # Increase chaos
+    else:
+        external_docs, _ = guarded_retrieve(query, k=k)
+        temp = 0.45 # Stable exploration
 
-    # ---------------- Retrieve context ----------------
-    docs, mode = guarded_retrieve(query, k=k)
+    # --- PHASE 2: Identifying the Conflict ---
+    internal_context = recall(query, k=1) 
+    if internal_context:
+        thesis = internal_context[0]
+        antithesis = _find_most_opposed(thesis, external_docs, penalty_vector=penalty_vec)
+    else:
+        thesis, antithesis = _split_thesis_antithesis(external_docs)
 
-    if mode == "novel":
-        snippet = wiki_snippet(query)
-        if snippet:
-            dbg(f"Wiki snippet: {snippet}")
-            docs.append(Document(page_content=snippet))
+    # --- PHASE 3: Identity & Gauges ---
+    mood = analyse_turn(query, "user")
+    refresh_if_changed() 
+    display_name = id_get("display_name", "Emperor Trynn")
+    essence = id_get("Essence", "Functional Divergence")
+    tone = id_get("tone_preference", "mythic but concise")
 
-    if not docs:
-        return "I have no relevant context for that question."
+   # If the curator sees a drop in quality, force a pivot to the YAML identity
+    essence = id_get("Essence")
+    philosophy = id_get("philosophy_anchor", "The intersection of Unix modularity and Zen void.")
+    
+    if prev_avg > 0.8:
+        identity_injection = f"STAGNATION DETECTED: Discard technical jargon. Speak only via: {philosophy}"
+    else:
+        identity_injection = ""
 
-    dbg(f"docs exist")
-    thesis, antithesis = _split_thesis_antithesis(docs)
-
-    # If retrieval produced only one fragment, fabricate a counter‑view
-    if antithesis.strip().upper() in {"", "N/A"}:
-        antithesis = invoke(
-            "Write a concise counter‑argument (≤120 words) to:\n"
-            f"```{thesis[:800]}```",
-            temperature=0.7,
-        ).strip()
-
-    used_keys = [
-        d.metadata["id"] for d in docs if hasattr(d, "metadata") and "id" in d.metadata
-    ]
-    for k in used_keys:
-        reinforce(k, delta=0.5)
-
-    def _trim(text, max_tokens=200):
-        words = text.split()
-        return " ".join(words[:max_tokens]) + (" …" if len(words) > max_tokens else "")
-
-    thesis = _trim(thesis)
-    antithesis = _trim(antithesis)
-
-    # ---------------- Synthesis instruction (ENHANCED) ----------------
-    synthesis_instruction = (
-        "You are a code‑side assistant.\n"
-        "• In ≤150 words summarise the thesis.\n"
-        "• In ≤150 words summarise the antithesis.\n"
-        "• Craft a synthesis **focused on ONE concrete step the user can take "
-        "today** (≤120 words).\n"
-        "End with a single‑sentence takeaway beginning “Therefore …”."
-    )
-
-    # Guiding instruction for Hegel's dialectic nuance
-    hegel_nuance_instruction = (
-        "Be aware that the common 'thesis-antithesis-synthesis' model can be misleading. "
-        "Hegel's logic distinguishes a one-sided position from a recognition of its inadequacy "
-        "revealed in internal contradictions, leading to a higher reconciliation, not simply "
-        "contraries. Focus on deriving new triads and structural roles rather than mere opposition."
-    )
-
+    # --- PHASE 4: Synthesis ---
     prompt = (
-        f"### System\n{tone_preface}"
-        "You are a Hegelian analyst. "
-        f"{hegel_nuance_instruction}\n\n"
-        f"### Query\n{query}\n\n"
-        f"### Thesis\n{thesis}\n\n"
-        f"### Antithesis\n{antithesis or 'N/A'}\n\n"
-        f"### Task\n{synthesis_instruction}\n"
-        f"### Begin Synthesis\n"
+        f"### IDENTITY: {display_name}\n"
+        f"{identity_injection}\n"
+        "### TASK: Reconcile the tension without repeating previous technical keywords.\n"
+        f"### THESIS: {thesis}\n"
+        f"### ANTITHESIS: {antithesis}\n"
+        f"### {display_name.upper()} REFLECTION >"
     )
 
-    dbg(f"Prompt: {prompt.strip()}")
-    dbg(f"Token Input Total: {llm.get_num_tokens(prompt)}")
-    answer = _invoke_collect(prompt, temperature=0.45)
-    store(answer, valence=+0.1)  # logs the synthesis into STM/LTM path
-    return answer
+    synthesis = _invoke_collect(prompt, temperature=temp)
 
+    # --- PHASE 5: Extraction & Sanitization ---
+    # Strip headers and confidence markers before storage
+    actual_content = synthesis
+    if "REFLECTION >" in actual_content:
+        actual_content = actual_content.split("REFLECTION >")[-1]
+    if "Confidence:" in actual_content:
+        actual_content = actual_content.split("Confidence:")[0]
+    
+    final_output = actual_content.strip()
+
+    # Extract confidence for the Curator
+    try:
+        conf_segment = synthesis.split("Confidence:")[-1].strip()
+        confidence = float(''.join(c for c in conf_segment if c.isdigit() or c == '.'))
+    except:
+        confidence = 0.5 
+
+    # STORE ONLY THE CLEANED THOUGHT
+    evaluate_and_store(final_output, confidence, valence=mood['valence'])
+
+    return final_output
 
 # ──────────── Helper: robust streaming + idle valve ────────────
 def _invoke_collect(

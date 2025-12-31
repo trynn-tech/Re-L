@@ -1,3 +1,5 @@
+# engine/memory/long-term.py
+
 import sqlite3, json, contextlib, pathlib
 
 DB = pathlib.Path("configs/ltm.sqlite")

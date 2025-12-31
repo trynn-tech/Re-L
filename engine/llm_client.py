@@ -17,9 +17,13 @@ llm = LlamaCpp(
 )
 
 
-def invoke(prompt: str, **kw) -> str:
-    kw.setdefault("max_tokens", 512)
-    return llm(prompt, **kw).strip()
+def invoke(prompt, **kw):
+    # Use the .invoke() method instead of calling the object
+    response = llm.invoke(prompt, config=kw)
+    # If response is a BaseMessage object (standard in newer LC), get .content
+    if hasattr(response, 'content'):
+        return response.content.strip()
+    return str(response).strip()
 
 
 def stream(prompt: str, **kw):

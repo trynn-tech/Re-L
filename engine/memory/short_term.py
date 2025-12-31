@@ -1,3 +1,4 @@
+# engine/memory/short-term.py
 """
 STM  – fast key‑value store on Redis
 Weight‑aware TTL acts as the forget gate.

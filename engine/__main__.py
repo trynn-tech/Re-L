@@ -13,10 +13,10 @@ Options
 """
 
 import argparse, sys
+import threading
 from engine import get_index, get_llm
 from engine.indexer import VectorIndexManager, DOCS_DIR, INDEX_PATH
 from engine.agent import hegelian_qa
-from engine.gauges import analyse_turn
 from engine.identity import refresh_if_changed
 
 
@@ -29,31 +29,42 @@ def build_argparser() -> argparse.ArgumentParser:
     )
     return p
 
-
 def run_repl():
     index_mgr = VectorIndexManager(path=str(INDEX_PATH))
+
+    # 1. Start the Background Watcher
+    watcher_thread = threading.Thread(target=index_mgr.watch, daemon=True)
+    watcher_thread.start()
+    print("📡 Background Watcher active: listening to the Vault...")
+
+    # 2. Initial Build if missing
     if not INDEX_PATH.exists():
-        index_mgr.build(folder=DOCS_DIR)
-    index_mgr.load()  # sets global FAISS via engine.__init__
+        print("🛠️ Index not found. Building initial index...")
+        # REMOVED / "vault" HERE:
+        index_mgr.build(folder=DOCS_DIR) 
+
+    index_mgr.load()
 
     while True:
         try:
-            query = input("🜂 ").strip()
+            query = input("=^-.-^= ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nbye")
             break
 
-        refresh_if_changed()  # hot‑reload identity.yaml
+        refresh_if_changed()
 
+        # Handle explicit reindex command
         if query == "/reindex":
-            index_mgr.build(folder=DOCS_DIR)
+            print("🔄 Reindexing Vault...")
+            # REMOVED / "vault" HERE:
+            index_mgr.build(folder=DOCS_DIR) 
             continue
+
         if not query:
             continue
 
         answer = hegelian_qa(query)
-        print("\n", answer, "\n")
-
 
 if __name__ == "__main__":
     args = build_argparser().parse_args()

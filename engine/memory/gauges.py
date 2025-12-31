@@ -1,4 +1,5 @@
-# forge/gauges.py
+# engine/memory/gauges.py
+
 from typing import Literal
 import numpy as np
 from sklearn.linear_model import LogisticRegression
