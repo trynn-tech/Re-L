@@ -339,3 +339,4 @@ def _invoke_collect(
         raise
 
     return "".join(buf)
+

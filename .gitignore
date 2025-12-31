@@ -1,6 +1,24 @@
-# Ignore Env files
-.env
-docker-compose.yml
+# .gitignore
 
-# Ignore caching files
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv/
+env/
+
+# Vector Stores & Indices (Keep these if you want to ship the brain, ignore if you want to rebuild)
+configs/heuristic.faiss
+configs/faiss_index.pkl
+
+models/*
+
+# Data SourcesData SourcesData SourcesData Sources
+docs/*.pdf
+docs/vault/*.pdf
+docs/vault/*.md
+docs/auxililary/*
+docs/*.txt

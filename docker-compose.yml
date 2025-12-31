@@ -1,0 +1,23 @@
+
+services:
+  re-l-intelligence:
+    image: nvidia/cuda:12.2.0-base-ubuntu22.04
+    container_name: re-l-core
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - .:/app
+      - re-l-data:/data         # This maps to the named volume below
+      - re-l-models:/app/models # This maps to the named volume below
+    working_dir: /app
+    command: tail -f /dev/null
+
+# This section tells Podman to reserve these "hard drives" in /var/lib/containers
+volumes:
+  re-l-data:
+  re-l-models:

@@ -34,3 +34,10 @@ LLM_MODEL = ROOT / "models" / "mistral-7b-instruct-v0.1.Q8_0.gguf"
 # --- Retrieval thresholds ---------------------------------------
 SIM_HIGH = 0.85
 SIM_LOW = 0.10
+
+# --- Model Bounds ---------------------------------------
+GRAVITY_THRESHOLD = 0.85  # Confidence level that triggers divergence
+MAX_THOUGHT_HISTORY = 3   # How many thought vectors to keep for repulsion
+STAGNATION_RECOVERY_TEMP = 0.85
+STABLE_EXPLORATION_TEMP = 0.45
+STOP_SEQUENCES = ["###", "IDENTITY:", "THESIS:", "REFLECTION >", "Confidence:"]
