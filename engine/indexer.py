@@ -77,3 +77,4 @@ class VectorIndexManager(FileSystemEventHandler):
         observer.join()
 
 
+
