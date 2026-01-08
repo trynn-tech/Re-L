@@ -14,6 +14,11 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
+    libmagic-dev \
+    poppler-utils \
+    tesseract-ocr \
+    libgl1 \
+    libglib2.0-0 \
     && add-apt-repository ppa:deadsnakes/ppa -y \
     && apt-get update && apt-get install -y \
     python3.13 \
@@ -56,6 +61,3 @@ RUN pip install --no-cache-dir \
 
 # Command to keep the container alive (NixOS/Systemd will manage the actual start)
 CMD ["tail", "-f", "/dev/null"]
-
-
-
